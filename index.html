@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Universal Game Controller</title>
+    <link rel="stylesheet" href="style.css">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#1a1a2e">
+</head>
+<body>
+    <!-- Connection Status -->
+    <div id="status-bar">
+        <div id="connection-status" class="disconnected">
+            <span id="status-text">Connecting...</span>
+            <span id="status-dot"></span>
+        </div>
+    </div>
+
+    <!-- Controller Container -->
+    <div id="controller-container">
+        
+        <!-- Left Side - D-Pad -->
+        <div class="control-section left-section">
+            <div class="dpad-container">
+                <div class="dpad-label">MOVEMENT</div>
+                <div class="dpad">
+                    <button class="dpad-btn dpad-up" data-button="dpad-up">
+                        <span>W</span>
+                    </button>
+                    <button class="dpad-btn dpad-left" data-button="dpad-left">
+                        <span>A</span>
+                    </button>
+                    <button class="dpad-btn dpad-center">
+                        <span>⚡</span>
+                    </button>
+                    <button class="dpad-btn dpad-right" data-button="dpad-right">
+                        <span>D</span>
+                    </button>
+                    <button class="dpad-btn dpad-down" data-button="dpad-down">
+                        <span>S</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Section - Mouse Trackpad -->
+        <div class="control-section center-section">
+            <div class="trackpad-container">
+                <div class="trackpad-label">MOUSE TRACKPAD</div>
+                <div id="trackpad" class="trackpad">
+                    <div class="trackpad-instructions">
+                        <div>Drag to move cursor</div>
+                        <div>Tap for left click</div>
+                        <div>Hold for right click</div>
+                    </div>
+                    <div class="trackpad-cursor"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Side - Action Buttons -->
+        <div class="control-section right-section">
+            <div class="action-buttons-container">
+                <div class="action-label">ACTIONS</div>
+                <div class="action-buttons-grid">
+                    <button class="action-btn jump-btn" data-button="action-jump">
+                        <span class="btn-label">JUMP</span>
+                        <span class="btn-key">SPACE</span>
+                    </button>
+                    <button class="action-btn run-btn" data-button="action-run">
+                        <span class="btn-label">RUN</span>
+                        <span class="btn-key">SHIFT</span>
+                    </button>
+                    <button class="action-btn interact-btn" data-button="action-interact">
+                        <span class="btn-label">USE</span>
+                        <span class="btn-key">E</span>
+                    </button>
+                    <button class="action-btn crouch-btn" data-button="action-crouch">
+                        <span class="btn-label">CROUCH</span>
+                        <span class="btn-key">CTRL</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Controls -->
+    <div id="bottom-controls">
+        <button id="menu-btn" class="utility-btn" data-button="action-escape">
+            <span>MENU</span>
+            <span>ESC</span>
+        </button>
+        
+        <div id="sensitivity-control">
+            <label for="mouse-sensitivity">Mouse Speed:</label>
+            <input type="range" id="mouse-sensitivity" min="0.5" max="5" step="0.5" value="2">
+            <span id="sensitivity-value">2x</span>
+        </div>
+        
+        <button id="vibration-test" class="utility-btn">
+            <span>TEST</span>
+            <span>📳</span>
+        </button>
+    </div>
+
+    <!-- Loading Screen -->
+    <div id="loading-screen">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Connecting to PC...</div>
+            <div class="loading-subtext">Make sure your phone and PC are on the same WiFi network</div>
+        </div>
+    </div>
+
+    <!-- Instructions Modal -->
+    <div id="instructions-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🎮 Controller Ready!</h2>
+                <button id="close-instructions" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="instruction-item">
+                    <strong>D-Pad:</strong> Movement controls (WASD keys)
+                </div>
+                <div class="instruction-item">
+                    <strong>Trackpad:</strong> Mouse control - drag to move, tap to click
+                </div>
+                <div class="instruction-item">
+                    <strong>Action Buttons:</strong> Game actions (Jump, Run, Interact, Crouch)
+                </div>
+                <div class="instruction-item">
+                    <strong>Menu:</strong> ESC key for game menus
+                </div>
+                <div class="tip">
+                    💡 <strong>Tip:</strong> Keep your phone in landscape mode for the best experience!
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="start-controlling" class="start-btn">Start Controlling!</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Haptic Feedback Indicator -->
+    <div id="haptic-indicator" class="haptic-indicator">
+        <div class="haptic-pulse"></div>
+    </div>
+
+    <!-- Socket.IO Client -->
+    <script src="/socket.io/socket.io.js"></script>
+    
+    <!-- Main Controller Script -->
+    <script src="client.js"></script>
+</body>
+</html>

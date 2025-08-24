@@ -1,0 +1,623 @@
+/* Reset and base styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: white;
+  overflow: hidden;
+  height: 100vh;
+  touch-action: manipulation;
+}
+
+/* Status Bar */
+#status-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+#connection-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+#status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff4444;
+  animation: pulse 2s infinite;
+}
+
+.connected #status-dot {
+  background: #44ff44;
+  animation: none;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* Main Controller Layout */
+#controller-container {
+  display: flex;
+  height: 100vh;
+  padding: 50px 10px 80px 10px;
+  gap: 15px;
+  align-items: center;
+  justify-content: center;
+}
+
+.control-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.left-section, .right-section {
+  flex: 1;
+  min-width: 120px;
+  max-width: 180px;
+}
+
+.center-section {
+  flex: 2;
+  min-width: 200px;
+  max-width: 300px;
+}
+
+/* D-Pad Styles */
+.dpad-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.dpad-label, .action-label, .trackpad-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  text-align: center;
+  margin-bottom: 5px;
+  letter-spacing: 1px;
+}
+
+.dpad {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
+  gap: 2px;
+  width: 120px;
+  height: 120px;
+}
+
+.dpad-btn {
+  background: linear-gradient(145deg, #2d3748, #1a202c);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: white;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.dpad-up { grid-column: 2; grid-row: 1; }
+.dpad-left { grid-column: 1; grid-row: 2; }
+.dpad-center { 
+  grid-column: 2; grid-row: 2; 
+  background: linear-gradient(145deg, #4a5568, #2d3748);
+  font-size: 20px;
+  cursor: default;
+}
+.dpad-right { grid-column: 3; grid-row: 2; }
+.dpad-down { grid-column: 2; grid-row: 3; }
+
+.dpad-btn:not(.dpad-center):active,
+.dpad-btn:not(.dpad-center).pressed {
+  background: linear-gradient(145deg, #4299e1, #2b6cb0);
+  border-color: #4299e1;
+  transform: scale(0.95);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+/* Trackpad Styles */
+.trackpad-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  height: 100%;
+}
+
+.trackpad {
+  width: 100%;
+  height: 200px;
+  background: linear-gradient(145deg, #2d3748, #1a202c);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 15px;
+  position: relative;
+  cursor: crosshair;
+  overflow: hidden;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.trackpad-instructions {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.3;
+  pointer-events: none;
+}
+
+.trackpad-cursor {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #4299e1;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.trackpad.active .trackpad-cursor {
+  opacity: 1;
+}
+
+.trackpad.active {
+  border-color: #4299e1;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3), 0 0 0 2px rgba(66, 153, 225, 0.3);
+}
+
+/* Action Buttons */
+.action-buttons-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.action-buttons-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 100%;
+  max-width: 160px;
+}
+
+.action-btn {
+  height: 50px;
+  background: linear-gradient(145deg, #2d3748, #1a202c);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  color: white;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.btn-label {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.btn-key {
+  font-size: 8px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 2px;
+}
+
+.action-btn:active,
+.action-btn.pressed {
+  background: linear-gradient(145deg, #48bb78, #38a169);
+  border-color: #48bb78;
+  transform: scale(0.95);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.jump-btn:active, .jump-btn.pressed {
+  background: linear-gradient(145deg, #ed8936, #dd6b20);
+  border-color: #ed8936;
+}
+
+.run-btn:active, .run-btn.pressed {
+  background: linear-gradient(145deg, #e53e3e, #c53030);
+  border-color: #e53e3e;
+}
+
+.interact-btn:active, .interact-btn.pressed {
+  background: linear-gradient(145deg, #9f7aea, #805ad5);
+  border-color: #9f7aea;
+}
+
+.crouch-btn:active, .crouch-btn.pressed {
+  background: linear-gradient(145deg, #38b2ac, #319795);
+  border-color: #38b2ac;
+}
+
+/* Bottom Controls */
+#bottom-controls {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 70px;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.utility-btn {
+  background: linear-gradient(145deg, #2d3748, #1a202c);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: white;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 10px;
+  min-width: 60px;
+}
+
+.utility-btn:active {
+  background: linear-gradient(145deg, #4a5568, #2d3748);
+  transform: scale(0.95);
+}
+
+#sensitivity-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+#mouse-sensitivity {
+  width: 80px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  outline: none;
+  appearance: none;
+}
+
+#mouse-sensitivity::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #4299e1;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+#sensitivity-value {
+  font-weight: 600;
+  color: #4299e1;
+  min-width: 25px;
+  text-align: center;
+}
+
+/* Loading Screen */
+#loading-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.loading-content {
+  text-align: center;
+}
+
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(255, 255, 255, 0.1);
+  border-left-color: #4299e1;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 20px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.loading-subtext {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Modal Styles */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3000;
+  padding: 20px;
+}
+
+.modal-content {
+  background: linear-gradient(145deg, #2d3748, #1a202c);
+  border-radius: 15px;
+  max-width: 400px;
+  width: 100%;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+}
+
+.modal-header {
+  padding: 20px 20px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.instruction-item {
+  margin-bottom: 12px;
+  line-height: 1.4;
+  font-size: 14px;
+}
+
+.tip {
+  margin-top: 15px;
+  padding: 12px;
+  background: rgba(66, 153, 225, 0.1);
+  border-left: 3px solid #4299e1;
+  border-radius: 5px;
+  font-size: 13px;
+}
+
+.modal-footer {
+  padding: 0 20px 20px;
+}
+
+.start-btn {
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(145deg, #4299e1, #2b6cb0);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.start-btn:active {
+  transform: scale(0.98);
+  background: linear-gradient(145deg, #2b6cb0, #2c5282);
+}
+
+/* Haptic Feedback Indicator */
+.haptic-indicator {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 60px;
+  height: 60px;
+  pointer-events: none;
+  z-index: 4000;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.haptic-indicator.active {
+  opacity: 1;
+}
+
+.haptic-pulse {
+  width: 100%;
+  height: 100%;
+  background: rgba(66, 153, 225, 0.3);
+  border-radius: 50%;
+  border: 2px solid #4299e1;
+  animation: hapticPulse 0.3s ease-out;
+}
+
+@keyframes hapticPulse {
+  0% {
+      transform: scale(0.5);
+      opacity: 1;
+  }
+  100% {
+      transform: scale(1.2);
+      opacity: 0;
+  }
+}
+
+/* Hidden class for showing/hiding elements */
+.hidden {
+  display: none !important;
+}
+
+/* Responsive Design */
+@media screen and (max-width: 480px) {
+  #controller-container {
+      padding: 50px 5px 80px 5px;
+      gap: 10px;
+  }
+  
+  .dpad {
+      width: 100px;
+      height: 100px;
+  }
+  
+  .dpad-btn {
+      font-size: 14px;
+  }
+  
+  .trackpad {
+      height: 150px;
+  }
+  
+  .action-btn {
+      height: 40px;
+      font-size: 9px;
+  }
+  
+  #bottom-controls {
+      padding: 0 10px;
+      height: 60px;
+  }
+  
+  #mouse-sensitivity {
+      width: 60px;
+  }
+}
+
+@media screen and (max-height: 500px) {
+  #controller-container {
+      padding: 40px 10px 60px 10px;
+  }
+  
+  .trackpad {
+      height: 120px;
+  }
+  
+  .dpad {
+      width: 90px;
+      height: 90px;
+  }
+  
+  #bottom-controls {
+      height: 50px;
+  }
+}
+
+/* Landscape orientation optimization */
+@media screen and (orientation: landscape) and (max-height: 600px) {
+  #controller-container {
+      flex-direction: row;
+      padding: 40px 10px 60px 10px;
+  }
+  
+  .control-section {
+      height: auto;
+  }
+  
+  .trackpad {
+      height: 140px;
+  }
+}
+
+/* Prevent zoom on double tap */
+button, input {
+  touch-action: manipulation;
+}
+
+/* iOS specific fixes */
+@supports (-webkit-touch-callout: none) {
+  body {
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+  }
+  
+  input[type="range"] {
+      -webkit-appearance: none;
+  }
+}
