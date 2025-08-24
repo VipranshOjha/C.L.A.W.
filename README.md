@@ -4,7 +4,7 @@
 
 Transform your smartphone into a wireless gaming claw that delivers professional-grade control to any PC game. C.L.A.W. brings the legendary claw grip technique to mobile gaming control - giving you lightning-fast reflexes and precise movements that competitive gamers demand.
 
-  ![Wireless](https://img.shields.io/badge/Connection*Control Laptop Anytime Wirelessly** - but it's so much more than an acronym. Just like the legendary claw grip technique that gives competitive gamers their edge, C.L.A.W. delivers the precision, speed, and control you need to dominate any game.
+**Control Laptop Anytime Wirelessly** - but it's so much more than an acronym. Just like the legendary claw grip technique that gives competitive gamers their edge, C.L.A.W. delivers the precision, speed, and control you need to dominate any game.
 
 ### 🎯 **The Claw Grip Advantage**
 Inspired by the pro gaming technique where players position their fingers like a claw for maximum control, C.L.A.W. brings that same philosophy to your smartphone:
