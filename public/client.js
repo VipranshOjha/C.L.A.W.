@@ -1,8 +1,3 @@
-/**
- * Multi-Touch Universal Game Controller - Client Side
- * Handles multi-touch interactions and creates unique virtual gamepads
- */
-
 class MultiTouchGameController {
     constructor() {
         this.socket = null;
@@ -650,3 +645,4 @@ document.addEventListener('DOMContentLoaded', () => {
     
     console.log('✅ Multi-Touch Controller initialized successfully!');
 });
+
