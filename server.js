@@ -1,7 +1,7 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
-const robot = require('robotjs');
+const vigem = require('node-vigem');
 const qrcode = require('qrcode');
 const ip = require('ip');
 const path = require('path');
@@ -18,178 +18,316 @@ const io = socketIo(server, {
 
 // Configuration constants
 const PORT = 3000;
-const MOUSE_SENSITIVITY = 2; // Adjust mouse movement sensitivity
-const DEBOUNCE_TIME = 50; // Milliseconds between rapid inputs
+const MAX_CONTROLLERS = 4;
+const STICK_SENSITIVITY = 0.8;
+const STICK_DEADZONE = 0.1;
 
-// Serve static files from public directory
+// Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Store connected clients and input states
-let connectedClients = 0;
-let lastInputTime = 0;
-let pressedKeys = new Set(); // Track currently pressed keys
-
-// Configure robotjs for better performance
-robot.setMouseDelay(1);
-robot.setKeyboardDelay(1);
+// Controller management
+let vigemClient = null;
+let connectedControllers = new Map(); // socketId -> controller info
+let controllerCount = 0;
 
 /**
- * Debounce function to prevent input spam
+ * Initialize ViGEm client
  */
-function shouldProcessInput() {
-    const now = Date.now();
-    if (now - lastInputTime < DEBOUNCE_TIME) {
+function initializeViGEm() {
+    try {
+        vigemClient = vigem.createClient();
+        console.log('✅ ViGEm client initialized successfully');
+        return true;
+    } catch (error) {
+        console.error('❌ Failed to initialize ViGEm client:', error.message);
+        console.error('💡 Make sure ViGEmBus driver is installed and you\'re running as Administrator');
         return false;
     }
-    lastInputTime = now;
-    return true;
 }
 
 /**
- * Process keyboard input from controller
+ * Create a new virtual Xbox 360 controller
  */
-function handleKeyboardInput(action, key) {
-    if (!shouldProcessInput()) return;
-    
+function createVirtualController(socketId, controllerNumber) {
     try {
-        switch (action) {
-            case 'press':
-                if (!pressedKeys.has(key)) {
-                    robot.keyToggle(key, 'down');
-                    pressedKeys.add(key);
-                }
-                break;
-            case 'release':
-                if (pressedKeys.has(key)) {
-                    robot.keyToggle(key, 'up');
-                    pressedKeys.delete(key);
-                }
-                break;
-            case 'tap':
-                robot.keyTap(key);
-                break;
-        }
-        console.log(`🎮 ${action.toUpperCase()}: ${key}`);
+        const controller = vigem.createX360Controller();
+        vigemClient.connect(controller);
+        
+        const controllerInfo = {
+            controller: controller,
+            number: controllerNumber,
+            socketId: socketId,
+            pressedButtons: new Set(),
+            leftStick: { x: 0, y: 0 },
+            rightStick: { x: 0, y: 0 },
+            leftTrigger: 0,
+            rightTrigger: 0
+        };
+        
+        connectedControllers.set(socketId, controllerInfo);
+        console.log(`🎮 Virtual Controller ${controllerNumber} created for socket ${socketId}`);
+        return controllerInfo;
+        
     } catch (error) {
-        console.error('❌ Keyboard input error:', error.message);
+        console.error('❌ Error creating virtual controller:', error.message);
+        return null;
     }
 }
 
 /**
- * Process mouse input from controller
+ * Destroy virtual controller
  */
-function handleMouseInput(action, data) {
-    try {
-        switch (action) {
-            case 'move':
-                if (data.deltaX !== 0 || data.deltaY !== 0) {
-                    const currentPos = robot.getMousePos();
-                    const newX = Math.max(0, currentPos.x + (data.deltaX * MOUSE_SENSITIVITY));
-                    const newY = Math.max(0, currentPos.y + (data.deltaY * MOUSE_SENSITIVITY));
-                    robot.moveMouse(newX, newY);
-                }
-                break;
-            case 'click':
-                robot.mouseClick(data.button || 'left');
-                console.log(`🖱️  Mouse ${data.button || 'left'} click`);
-                break;
+function destroyVirtualController(socketId) {
+    const controllerInfo = connectedControllers.get(socketId);
+    if (controllerInfo) {
+        try {
+            vigemClient.disconnect(controllerInfo.controller);
+            connectedControllers.delete(socketId);
+            console.log(`🎮 Virtual Controller ${controllerInfo.number} destroyed`);
+        } catch (error) {
+            console.error('❌ Error destroying controller:', error.message);
         }
-    } catch (error) {
-        console.error('❌ Mouse input error:', error.message);
     }
 }
 
 /**
- * Map controller buttons to keyboard keys
+ * Map controller buttons to Xbox 360 button constants
  */
-function mapButtonToKey(buttonName) {
-    const keyMap = {
-        // D-pad controls
-        'dpad-up': 'w',
-        'dpad-down': 's', 
-        'dpad-left': 'a',
-        'dpad-right': 'd',
-        
-        // Action buttons
-        'action-jump': 'space',
-        'action-run': 'shift',
-        'action-interact': 'e',
-        'action-crouch': 'control',
-        
-        // Additional controls (can be customized)
-        'action-reload': 'r',
-        'action-map': 'm',
-        'action-inventory': 'i',
-        'action-escape': 'escape'
-    };
+const BUTTON_MAP = {
+    'dpad-up': vigem.X360Buttons.DPAD_UP,
+    'dpad-down': vigem.X360Buttons.DPAD_DOWN,
+    'dpad-left': vigem.X360Buttons.DPAD_LEFT,
+    'dpad-right': vigem.X360Buttons.DPAD_RIGHT,
+    'action-jump': vigem.X360Buttons.A,
+    'action-run': vigem.X360Buttons.X,
+    'action-interact': vigem.X360Buttons.B,
+    'action-crouch': vigem.X360Buttons.Y,
+    'left-click': vigem.X360Buttons.LEFT_SHOULDER,
+    'right-click': vigem.X360Buttons.RIGHT_SHOULDER,
+    'menu': vigem.X360Buttons.START,
+    'back': vigem.X360Buttons.BACK
+};
+
+/**
+ * Handle button press/release
+ */
+function handleButton(socketId, buttonName, pressed) {
+    const controllerInfo = connectedControllers.get(socketId);
+    if (!controllerInfo) return;
     
-    return keyMap[buttonName] || buttonName;
+    const xboxButton = BUTTON_MAP[buttonName];
+    if (!xboxButton) return;
+    
+    try {
+        if (pressed) {
+            controllerInfo.pressedButtons.add(buttonName);
+            controllerInfo.controller.button(xboxButton, true);
+        } else {
+            controllerInfo.pressedButtons.delete(buttonName);
+            controllerInfo.controller.button(xboxButton, false);
+        }
+        
+        console.log(`🎮 Controller ${controllerInfo.number}: ${buttonName} ${pressed ? 'pressed' : 'released'}`);
+    } catch (error) {
+        console.error('❌ Button handling error:', error.message);
+    }
+}
+
+/**
+ * Handle analog stick movement
+ */
+function handleStickMovement(socketId, stickData) {
+    const controllerInfo = connectedControllers.get(socketId);
+    if (!controllerInfo) return;
+    
+    try {
+        // Map trackpad movement to right analog stick (camera control)
+        let x = Math.max(-1, Math.min(1, stickData.deltaX * STICK_SENSITIVITY));
+        let y = Math.max(-1, Math.min(1, stickData.deltaY * STICK_SENSITIVITY));
+        
+        // Apply deadzone
+        if (Math.abs(x) < STICK_DEADZONE) x = 0;
+        if (Math.abs(y) < STICK_DEADZONE) y = 0;
+        
+        // Convert to Xbox 360 stick range (-32768 to 32767)
+        const stickX = Math.round(x * 32767);
+        const stickY = Math.round(-y * 32767); // Invert Y axis for natural camera movement
+        
+        controllerInfo.rightStick.x = stickX;
+        controllerInfo.rightStick.y = stickY;
+        
+        controllerInfo.controller.axis(vigem.X360Axes.RIGHT_STICK_X, stickX);
+        controllerInfo.controller.axis(vigem.X360Axes.RIGHT_STICK_Y, stickY);
+        
+        // Update controller state
+        controllerInfo.controller.updateState();
+        
+    } catch (error) {
+        console.error('❌ Stick movement error:', error.message);
+    }
+}
+
+/**
+ * Handle mouse click events
+ */
+function handleMouseClick(socketId, clickData) {
+    const buttonName = clickData.button === 'right' ? 'right-click' : 'left-click';
+    
+    // Simulate button press and release for click
+    handleButton(socketId, buttonName, true);
+    setTimeout(() => {
+        handleButton(socketId, buttonName, false);
+    }, 100);
+}
+
+/**
+ * Get next available controller number
+ */
+function getNextControllerNumber() {
+    const usedNumbers = Array.from(connectedControllers.values()).map(info => info.number);
+    for (let i = 1; i <= MAX_CONTROLLERS; i++) {
+        if (!usedNumbers.includes(i)) {
+            return i;
+        }
+    }
+    return null;
 }
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-    connectedClients++;
-    console.log(`📱 New controller connected! (${connectedClients} total)`);
-    console.log(`   Socket ID: ${socket.id}`);
+    // Check if max controllers reached
+    if (controllerCount >= MAX_CONTROLLERS) {
+        socket.emit('connection-rejected', {
+            reason: 'Maximum number of controllers reached',
+            maxControllers: MAX_CONTROLLERS
+        });
+        socket.disconnect();
+        return;
+    }
+    
+    const controllerNumber = getNextControllerNumber();
+    if (!controllerNumber) {
+        socket.emit('connection-rejected', {
+            reason: 'No controller slots available'
+        });
+        socket.disconnect();
+        return;
+    }
+    
+    // Create virtual controller
+    const controllerInfo = createVirtualController(socket.id, controllerNumber);
+    if (!controllerInfo) {
+        socket.emit('connection-rejected', {
+            reason: 'Failed to create virtual controller'
+        });
+        socket.disconnect();
+        return;
+    }
+    
+    controllerCount++;
+    console.log(`📱 Controller ${controllerNumber} connected! (${controllerCount}/${MAX_CONTROLLERS} total)`);
     
     // Send connection confirmation
     socket.emit('connected', {
         message: 'Controller connected successfully!',
-        clientCount: connectedClients
+        controllerNumber: controllerNumber,
+        totalControllers: controllerCount,
+        maxControllers: MAX_CONTROLLERS
     });
     
-    // Handle button press events
+    // Broadcast controller count to all clients
+    io.emit('controller-count', {
+        total: controllerCount,
+        max: MAX_CONTROLLERS
+    });
+    
+    // Handle button events
     socket.on('button-press', (data) => {
-        const key = mapButtonToKey(data.button);
-        handleKeyboardInput('press', key);
+        handleButton(socket.id, data.button, true);
     });
     
-    // Handle button release events
     socket.on('button-release', (data) => {
-        const key = mapButtonToKey(data.button);
-        handleKeyboardInput('release', key);
+        handleButton(socket.id, data.button, false);
     });
     
-    // Handle button tap events (press and immediate release)
-    socket.on('button-tap', (data) => {
-        const key = mapButtonToKey(data.button);
-        handleKeyboardInput('tap', key);
-    });
-    
-    // Handle mouse movement from trackpad
+    // Handle mouse/trackpad events
     socket.on('mouse-move', (data) => {
-        handleMouseInput('move', data);
+        handleStickMovement(socket.id, data);
     });
     
-    // Handle mouse clicks
     socket.on('mouse-click', (data) => {
-        handleMouseInput('click', data);
+        handleMouseClick(socket.id, data);
     });
     
-    // Handle controller vibration (if supported by client)
+    // Handle controller vibration
     socket.on('request-vibration', (data) => {
-        // Echo vibration request back to client
-        socket.emit('vibrate', {
-            duration: data.duration || 100,
-            intensity: data.intensity || 0.5
-        });
+        const controllerInfo = connectedControllers.get(socket.id);
+        if (controllerInfo) {
+            try {
+                const intensity = Math.min(1, Math.max(0, data.intensity || 0.5));
+                const duration = Math.min(5000, Math.max(100, data.duration || 100));
+                
+                // Set vibration on virtual controller
+                controllerInfo.controller.axis(vigem.X360Axes.LEFT_MOTOR, Math.round(intensity * 255));
+                controllerInfo.controller.axis(vigem.X360Axes.RIGHT_MOTOR, Math.round(intensity * 255));
+                controllerInfo.controller.updateState();
+                
+                // Stop vibration after duration
+                setTimeout(() => {
+                    controllerInfo.controller.axis(vigem.X360Axes.LEFT_MOTOR, 0);
+                    controllerInfo.controller.axis(vigem.X360Axes.RIGHT_MOTOR, 0);
+                    controllerInfo.controller.updateState();
+                }, duration);
+                
+                // Echo back to client for haptic feedback
+                socket.emit('vibrate', {
+                    duration: duration,
+                    intensity: intensity
+                });
+            } catch (error) {
+                console.error('❌ Vibration error:', error.message);
+            }
+        }
     });
     
     // Handle disconnection
     socket.on('disconnect', (reason) => {
-        connectedClients--;
-        console.log(`📱 Controller disconnected: ${reason}`);
-        console.log(`   Controllers remaining: ${connectedClients}`);
-        
-        // Release all keys that might be stuck pressed
-        pressedKeys.forEach(key => {
+        const controllerInfo = connectedControllers.get(socket.id);
+        if (controllerInfo) {
+            console.log(`📱 Controller ${controllerInfo.number} disconnected: ${reason}`);
+            
+            // Release all pressed buttons
+            controllerInfo.pressedButtons.forEach(buttonName => {
+                const xboxButton = BUTTON_MAP[buttonName];
+                if (xboxButton) {
+                    try {
+                        controllerInfo.controller.button(xboxButton, false);
+                    } catch (error) {
+                        console.error(`❌ Error releasing button ${buttonName}:`, error.message);
+                    }
+                }
+            });
+            
+            // Reset sticks and triggers
             try {
-                robot.keyToggle(key, 'up');
+                controllerInfo.controller.axis(vigem.X360Axes.RIGHT_STICK_X, 0);
+                controllerInfo.controller.axis(vigem.X360Axes.RIGHT_STICK_Y, 0);
+                controllerInfo.controller.axis(vigem.X360Axes.LEFT_STICK_X, 0);
+                controllerInfo.controller.axis(vigem.X360Axes.LEFT_STICK_Y, 0);
+                controllerInfo.controller.updateState();
             } catch (error) {
-                console.error(`❌ Error releasing key ${key}:`, error.message);
+                console.error('❌ Error resetting controller state:', error.message);
             }
-        });
-        pressedKeys.clear();
+            
+            destroyVirtualController(socket.id);
+            controllerCount--;
+            
+            // Broadcast updated controller count
+            io.emit('controller-count', {
+                total: controllerCount,
+                max: MAX_CONTROLLERS
+            });
+        }
     });
     
     // Handle errors
@@ -198,25 +336,26 @@ io.on('connection', (socket) => {
     });
 });
 
-// Generate and display QR code
+// Generate and display connection info
 async function displayConnectionInfo() {
     const localIP = ip.address();
     const serverURL = `http://${localIP}:${PORT}`;
     
-    console.log('\n' + '='.repeat(60));
-    console.log('🎮 UNIVERSAL SMARTPHONE GAME CONTROLLER');
-    console.log('='.repeat(60));
+    console.log('\n' + '='.repeat(70));
+    console.log('🎮 MULTI-CONTROLLER GAMEPAD SYSTEM v2.0');
+    console.log('='.repeat(70));
     console.log(`📡 Server running on: ${serverURL}`);
     console.log(`🌐 Local IP Address: ${localIP}`);
     console.log(`🔌 Port: ${PORT}`);
-    console.log('\n📱 CONNECT YOUR PHONE:');
-    console.log('   1. Connect phone to same Wi-Fi network');
-    console.log('   2. Scan QR code below with phone camera');
-    console.log('   3. Controller will open in browser');
-    console.log('\n' + '='.repeat(60));
+    console.log(`🎯 Max Controllers: ${MAX_CONTROLLERS}`);
+    console.log('\n📱 CONNECT YOUR PHONES:');
+    console.log(' 1. Ensure ViGEmBus driver is installed');
+    console.log(' 2. Connect phones to same Wi-Fi network');
+    console.log(' 3. Scan QR code below with phone camera');
+    console.log(' 4. Each phone becomes a unique Xbox controller');
+    console.log('\n' + '='.repeat(70));
     
     try {
-        // Generate QR code for easy connection
         const qrString = await qrcode.toString(serverURL, {
             type: 'terminal',
             small: true,
@@ -228,15 +367,17 @@ async function displayConnectionInfo() {
         console.log(`📱 Manual connection: Open ${serverURL} on your phone`);
     }
     
-    console.log('='.repeat(60));
-    console.log('🎯 Ready for connections! Waiting for controllers...\n');
+    console.log('='.repeat(70));
+    console.log('🎯 Ready for controllers! Waiting for connections...\n');
 }
 
-// Error handling for robotjs
+// Error handling
 process.on('uncaughtException', (error) => {
-    if (error.message.includes('robotjs')) {
-        console.error('❌ RobotJS Error - Make sure to run as administrator/sudo');
-        console.error('   This is required for input simulation to work properly');
+    if (error.message.includes('vigem') || error.message.includes('ViGEm')) {
+        console.error('❌ ViGEm Error - Make sure:');
+        console.error('  1. ViGEmBus driver is installed');
+        console.error('  2. You are running as Administrator');
+        console.error('  3. Your system supports ViGEm');
     } else {
         console.error('❌ Uncaught Exception:', error);
     }
@@ -246,14 +387,18 @@ process.on('uncaughtException', (error) => {
 process.on('SIGINT', () => {
     console.log('\n🔄 Shutting down server...');
     
-    // Release all pressed keys
-    pressedKeys.forEach(key => {
-        try {
-            robot.keyToggle(key, 'up');
-        } catch (error) {
-            // Ignore errors during shutdown
-        }
+    // Clean up all controllers
+    connectedControllers.forEach((controllerInfo, socketId) => {
+        destroyVirtualController(socketId);
     });
+    
+    if (vigemClient) {
+        try {
+            vigemClient.dispose();
+        } catch (error) {
+            console.error('❌ Error disposing ViGEm client:', error.message);
+        }
+    }
     
     server.close(() => {
         console.log('✅ Server shut down gracefully');
@@ -261,7 +406,13 @@ process.on('SIGINT', () => {
     });
 });
 
-// Start the server
-server.listen(PORT, () => {
-    displayConnectionInfo();
-});
+// Initialize and start server
+if (initializeViGEm()) {
+    server.listen(PORT, () => {
+        displayConnectionInfo();
+    });
+} else {
+    console.error('❌ Failed to initialize ViGEm. Server cannot start.');
+    console.error('💡 Please install ViGEmBus driver and run as Administrator');
+    process.exit(1);
+}

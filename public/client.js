@@ -1,21 +1,20 @@
 /**
- * Universal Smartphone Game Controller - Client Side
- * Handles user interactions and WebSocket communication
+ * Multi-Touch Universal Game Controller - Client Side
+ * Handles multi-touch interactions and creates unique virtual gamepads
  */
 
-class GameController {
+class MultiTouchGameController {
     constructor() {
         this.socket = null;
         this.isConnected = false;
+        this.controllerNumber = null;
         this.mouseSensitivity = 2;
-        this.pressedButtons = new Set();
+        this.activeButtons = new Map(); // buttonName -> Set of touch identifiers
+        this.activeTouches = new Map(); // touch identifier -> touch data
         
         // Trackpad state
-        this.trackpadActive = false;
-        this.lastTouch = { x: 0, y: 0 };
-        this.isTracking = false;
-        this.clickTimeout = null;
-        this.longPressTimeout = null;
+        this.trackpadTouches = new Map(); // touch identifier -> touch data
+        this.trackpadClickTimeout = null;
         
         // UI elements
         this.elements = {
@@ -23,6 +22,7 @@ class GameController {
             instructionsModal: document.getElementById('instructions-modal'),
             statusText: document.getElementById('status-text'),
             connectionStatus: document.getElementById('connection-status'),
+            controllerInfo: document.getElementById('controller-info'),
             trackpad: document.getElementById('trackpad'),
             trackpadCursor: document.querySelector('.trackpad-cursor'),
             mouseSensitivity: document.getElementById('mouse-sensitivity'),
@@ -39,56 +39,62 @@ class GameController {
     init() {
         this.initializeSocket();
         this.setupEventListeners();
-        this.setupTrackpad();
+        this.setupMultiTouchControls();
         this.preventContextMenu();
         this.enableFullscreen();
     }
     
     /**
-     * Initialize WebSocket connection
+     * Initialize WebSocket connection with enhanced error handling
      */
     initializeSocket() {
         console.log('🔌 Connecting to server...');
         this.updateStatus('Connecting...', false);
         
-        // Connect to server (automatically detects host)
         this.socket = io();
         
-        // Connection successful
         this.socket.on('connect', () => {
             console.log('✅ Connected to server');
             this.isConnected = true;
             this.updateStatus('Connected', true);
-            this.hideLoadingScreen();
         });
         
-        // Connection confirmed by server
         this.socket.on('connected', (data) => {
-            console.log('🎮 Controller ready:', data.message);
+            console.log('🎮 Controller ready:', data);
+            this.controllerNumber = data.controllerNumber;
+            this.updateControllerInfo(data);
+            this.hideLoadingScreen();
             this.showInstructionsModal();
         });
         
-        // Handle disconnection
+        this.socket.on('connection-rejected', (data) => {
+            console.error('❌ Connection rejected:', data.reason);
+            this.updateStatus(`Rejected: ${data.reason}`, false);
+            alert(`Connection rejected: ${data.reason}`);
+        });
+        
+        this.socket.on('controller-count', (data) => {
+            console.log(`🎮 Controllers: ${data.total}/${data.max}`);
+        });
+        
         this.socket.on('disconnect', (reason) => {
             console.log('❌ Disconnected:', reason);
             this.isConnected = false;
+            this.controllerNumber = null;
             this.updateStatus('Disconnected', false);
             this.showLoadingScreen();
             this.releaseAllButtons();
         });
         
-        // Handle vibration requests from server
         this.socket.on('vibrate', (data) => {
             this.triggerHapticFeedback(data.duration, data.intensity);
         });
         
-        // Connection error
         this.socket.on('connect_error', (error) => {
             console.error('💥 Connection error:', error);
             this.updateStatus('Connection Error', false);
         });
         
-        // Reconnection attempts
         this.socket.on('reconnect_attempt', (attemptNumber) => {
             console.log(`🔄 Reconnection attempt ${attemptNumber}`);
             this.updateStatus(`Reconnecting... (${attemptNumber})`, false);
@@ -103,47 +109,16 @@ class GameController {
     }
     
     /**
-     * Setup all event listeners for controls
+     * Setup event listeners for UI controls
      */
     setupEventListeners() {
-        // D-pad and action buttons
-        document.querySelectorAll('[data-button]').forEach(button => {
-            const buttonName = button.getAttribute('data-button');
-            
-            // Mouse events (for desktop testing)
-            button.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                this.handleButtonPress(buttonName, button);
-            });
-            
-            button.addEventListener('mouseup', (e) => {
-                e.preventDefault();
-                this.handleButtonRelease(buttonName, button);
-            });
-            
-            // Touch events (primary for mobile)
-            button.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                this.handleButtonPress(buttonName, button);
-            });
-            
-            button.addEventListener('touchend', (e) => {
-                e.preventDefault();
-                this.handleButtonRelease(buttonName, button);
-            });
-            
-            // Prevent context menu and text selection
-            button.addEventListener('contextmenu', (e) => e.preventDefault());
-            button.addEventListener('selectstart', (e) => e.preventDefault());
-        });
-        
         // Mouse sensitivity control
         this.elements.mouseSensitivity.addEventListener('input', (e) => {
             this.mouseSensitivity = parseFloat(e.target.value);
             this.elements.sensitivityValue.textContent = `${this.mouseSensitivity}x`;
         });
         
-        // Vibration test button
+        // Vibration test
         this.elements.vibrationTest.addEventListener('click', () => {
             this.testVibration();
         });
@@ -157,9 +132,9 @@ class GameController {
             this.hideInstructionsModal();
         });
         
-        // Prevent window scrolling and zooming
+        // Prevent unwanted scrolling and zooming
         document.addEventListener('touchmove', (e) => {
-            if (e.target !== this.elements.trackpad && !this.elements.trackpad.contains(e.target)) {
+            if (!this.elements.trackpad.contains(e.target)) {
                 e.preventDefault();
             }
         }, { passive: false });
@@ -169,27 +144,129 @@ class GameController {
     }
     
     /**
-     * Setup trackpad for mouse control
+     * Setup multi-touch controls for all buttons and trackpad
      */
-    setupTrackpad() {
-        const trackpad = this.elements.trackpad;
-        const cursor = this.elements.trackpadCursor;
+    setupMultiTouchControls() {
+        // Setup multi-touch for all control buttons
+        document.querySelectorAll('[data-button]').forEach(element => {
+            this.setupButtonMultiTouch(element);
+        });
         
-        // Touch events for trackpad
+        // Setup trackpad multi-touch
+        this.setupTrackpadMultiTouch();
+    }
+    
+    /**
+     * Setup multi-touch handling for individual buttons
+     */
+    setupButtonMultiTouch(element) {
+        const buttonName = element.getAttribute('data-button');
+        
+        // Touch events
+        element.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            this.handleButtonTouchStart(buttonName, element, e);
+        }, { passive: false });
+        
+        element.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            this.handleButtonTouchEnd(buttonName, element, e);
+        }, { passive: false });
+        
+        element.addEventListener('touchcancel', (e) => {
+            e.preventDefault();
+            this.handleButtonTouchEnd(buttonName, element, e);
+        }, { passive: false });
+        
+        // Mouse events for desktop testing
+        element.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            this.simulateTouch(buttonName, element, true);
+        });
+        
+        element.addEventListener('mouseup', (e) => {
+            e.preventDefault();
+            this.simulateTouch(buttonName, element, false);
+        });
+        
+        // Prevent context menu and selection
+        element.addEventListener('contextmenu', (e) => e.preventDefault());
+        element.addEventListener('selectstart', (e) => e.preventDefault());
+    }
+    
+    /**
+     * Handle button touch start with multi-touch support
+     */
+    handleButtonTouchStart(buttonName, element, event) {
+        if (!this.isConnected) return;
+        
+        const currentTouches = this.activeButtons.get(buttonName) || new Set();
+        
+        // Add all new touches for this button
+        Array.from(event.changedTouches).forEach(touch => {
+            currentTouches.add(touch.identifier);
+        });
+        
+        this.activeButtons.set(buttonName, currentTouches);
+        
+        // If this is the first touch on this button, press it
+        if (currentTouches.size === event.changedTouches.length) {
+            element.classList.add('pressed');
+            this.socket.emit('button-press', { button: buttonName });
+            this.showHapticFeedback();
+            console.log(`🎮 Button pressed: ${buttonName}`);
+        }
+    }
+    
+    /**
+     * Handle button touch end with multi-touch support
+     */
+    handleButtonTouchEnd(buttonName, element, event) {
+        if (!this.isConnected) return;
+        
+        const currentTouches = this.activeButtons.get(buttonName) || new Set();
+        
+        // Remove ended touches
+        Array.from(event.changedTouches).forEach(touch => {
+            currentTouches.delete(touch.identifier);
+        });
+        
+        this.activeButtons.set(buttonName, currentTouches);
+        
+        // If no more touches on this button, release it
+        if (currentTouches.size === 0) {
+            element.classList.remove('pressed');
+            this.socket.emit('button-release', { button: buttonName });
+            this.activeButtons.delete(buttonName);
+            console.log(`🎮 Button released: ${buttonName}`);
+        }
+    }
+    
+    /**
+     * Setup trackpad multi-touch handling
+     */
+    setupTrackpadMultiTouch() {
+        const trackpad = this.elements.trackpad;
+        
         trackpad.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            this.startTrackpadTouch(e);
-        });
+            this.handleTrackpadTouchStart(e);
+        }, { passive: false });
         
         trackpad.addEventListener('touchmove', (e) => {
             e.preventDefault();
-            this.handleTrackpadMove(e);
-        });
+            this.handleTrackpadTouchMove(e);
+        }, { passive: false });
         
         trackpad.addEventListener('touchend', (e) => {
             e.preventDefault();
-            this.endTrackpadTouch(e);
-        });
+            this.handleTrackpadTouchEnd(e);
+        }, { passive: false });
+        
+        trackpad.addEventListener('touchcancel', (e) => {
+            e.preventDefault();
+            this.handleTrackpadTouchEnd(e);
+        }, { passive: false });
         
         // Mouse events for desktop testing
         trackpad.addEventListener('mousedown', (e) => {
@@ -215,160 +292,146 @@ class GameController {
     /**
      * Handle trackpad touch start
      */
-    startTrackpadTouch(e) {
-        if (e.touches.length === 1) {
-            const touch = e.touches[0];
-            const rect = this.elements.trackpad.getBoundingClientRect();
-            
-            this.lastTouch = {
-                x: touch.clientX - rect.left,
-                y: touch.clientY - rect.top
-            };
-            
-            this.isTracking = true;
-            this.trackpadActive = true;
-            this.elements.trackpad.classList.add('active');
-            
-            this.updateTrackpadCursor(this.lastTouch.x, this.lastTouch.y);
-            
-            // Setup click detection
-            this.clickTimeout = setTimeout(() => {
-                // Long press - right click
-                this.sendMouseClick('right');
-                this.showHapticFeedback();
-            }, 500);
-        }
+    handleTrackpadTouchStart(event) {
+        const rect = this.elements.trackpad.getBoundingClientRect();
+        
+        Array.from(event.changedTouches).forEach(touch => {
+            this.trackpadTouches.set(touch.identifier, {
+                startX: touch.clientX - rect.left,
+                startY: touch.clientY - rect.top,
+                lastX: touch.clientX - rect.left,
+                lastY: touch.clientY - rect.top,
+                startTime: Date.now(),
+                moved: false
+            });
+        });
+        
+        this.elements.trackpad.classList.add('active');
+        this.updateTrackpadCursor(event.touches[0]);
     }
     
     /**
      * Handle trackpad touch movement
      */
-    handleTrackpadMove(e) {
-        if (!this.isTracking || e.touches.length !== 1) return;
+    handleTrackpadTouchMove(event) {
+        if (!this.isConnected) return;
         
-        const touch = e.touches[0];
         const rect = this.elements.trackpad.getBoundingClientRect();
-        const currentTouch = {
-            x: touch.clientX - rect.left,
-            y: touch.clientY - rect.top
-        };
         
-        // Calculate movement delta
-        const deltaX = currentTouch.x - this.lastTouch.x;
-        const deltaY = currentTouch.y - this.lastTouch.y;
-        
-        // Send mouse movement
-        if (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1) {
-            this.sendMouseMove(deltaX, deltaY);
-            this.lastTouch = currentTouch;
+        Array.from(event.changedTouches).forEach(touch => {
+            const touchData = this.trackpadTouches.get(touch.identifier);
+            if (!touchData) return;
             
-            // Clear click timeout on movement
-            if (this.clickTimeout) {
-                clearTimeout(this.clickTimeout);
-                this.clickTimeout = null;
+            const currentX = touch.clientX - rect.left;
+            const currentY = touch.clientY - rect.top;
+            
+            const deltaX = currentX - touchData.lastX;
+            const deltaY = currentY - touchData.lastY;
+            
+            // Mark as moved if significant movement
+            if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {
+                touchData.moved = true;
+                
+                // Send movement only for the primary touch
+                if (event.touches.identifier === touch.identifier) {
+                    this.sendMouseMove(deltaX, deltaY);
+                }
             }
-        }
+            
+            touchData.lastX = currentX;
+            touchData.lastY = currentY;
+        });
         
-        this.updateTrackpadCursor(currentTouch.x, currentTouch.y);
+        this.updateTrackpadCursor(event.touches);
     }
     
     /**
-     * Handle trackpad touch end
+     * Handle trackpad touch end with tap detection
      */
-    endTrackpadTouch(e) {
-        this.isTracking = false;
-        this.trackpadActive = false;
-        this.elements.trackpad.classList.remove('active');
+    handleTrackpadTouchEnd(event) {
+        const endedTouches = Array.from(event.changedTouches);
+        const remainingTouches = Array.from(event.touches);
         
-        // Handle tap (left click)
-        if (this.clickTimeout) {
-            clearTimeout(this.clickTimeout);
-            this.clickTimeout = null;
-            this.sendMouseClick('left');
+        // Process ended touches
+        const tapTouches = [];
+        endedTouches.forEach(touch => {
+            const touchData = this.trackpadTouches.get(touch.identifier);
+            if (touchData) {
+                const duration = Date.now() - touchData.startTime;
+                // Consider it a tap if not moved much and quick duration
+                if (!touchData.moved && duration < 300) {
+                    tapTouches.push(touch);
+                }
+                this.trackpadTouches.delete(touch.identifier);
+            }
+        });
+        
+        // Handle tap detection
+        if (tapTouches.length > 0 && remainingTouches.length === 0) {
+            const tapType = tapTouches.length === 1 ? 'left' : 'right';
+            this.sendMouseClick(tapType);
             this.showHapticFeedback();
         }
-    }
-    
-    /**
-     * Handle mouse events for desktop testing
-     */
-    startTrackpadMouse(e) {
-        const rect = this.elements.trackpad.getBoundingClientRect();
-        this.lastTouch = {
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top
-        };
-        this.isTracking = true;
-        this.trackpadActive = true;
-        this.elements.trackpad.classList.add('active');
-        this.updateTrackpadCursor(this.lastTouch.x, this.lastTouch.y);
-    }
-    
-    handleTrackpadMouseMove(e) {
-        if (!this.isTracking) return;
         
-        const rect = this.elements.trackpad.getBoundingClientRect();
-        const currentPos = {
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top
-        };
-        
-        const deltaX = currentPos.x - this.lastTouch.x;
-        const deltaY = currentPos.y - this.lastTouch.y;
-        
-        this.sendMouseMove(deltaX, deltaY);
-        this.lastTouch = currentPos;
-        this.updateTrackpadCursor(currentPos.x, currentPos.y);
-    }
-    
-    endTrackpadMouse(e) {
-        if (this.isTracking) {
-            this.sendMouseClick(e.button === 2 ? 'right' : 'left');
+        // Update UI state
+        if (remainingTouches.length === 0) {
+            this.elements.trackpad.classList.remove('active');
+        } else if (remainingTouches.length > 0) {
+            this.updateTrackpadCursor(remainingTouches[0]);
         }
-        this.isTracking = false;
-        this.trackpadActive = false;
-        this.elements.trackpad.classList.remove('active');
     }
     
     /**
      * Update trackpad cursor position
      */
-    updateTrackpadCursor(x, y) {
+    updateTrackpadCursor(touch) {
+        const rect = this.elements.trackpad.getBoundingClientRect();
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+        
         this.elements.trackpadCursor.style.left = `${x}px`;
         this.elements.trackpadCursor.style.top = `${y}px`;
+        this.elements.trackpadCursor.style.opacity = '1';
     }
     
     /**
-     * Handle button press
+     * Mouse event handlers for desktop testing
      */
-    handleButtonPress(buttonName, buttonElement) {
-        if (this.pressedButtons.has(buttonName) || !this.isConnected) return;
-        
-        this.pressedButtons.add(buttonName);
-        buttonElement.classList.add('pressed');
-        
-        // Send button press to server
-        this.socket.emit('button-press', { button: buttonName });
-        
-        // Haptic feedback for button press
-        this.showHapticFeedback();
-        
-        console.log(`🎮 Button pressed: ${buttonName}`);
+    startTrackpadMouse(event) {
+        const rect = this.elements.trackpad.getBoundingClientRect();
+        this.mouseTrackingData = {
+            lastX: event.clientX - rect.left,
+            lastY: event.clientY - rect.top,
+            tracking: true
+        };
+        this.elements.trackpad.classList.add('active');
     }
     
-    /**
-     * Handle button release
-     */
-    handleButtonRelease(buttonName, buttonElement) {
-        if (!this.pressedButtons.has(buttonName) || !this.isConnected) return;
+    handleTrackpadMouseMove(event) {
+        if (!this.mouseTrackingData?.tracking || !this.isConnected) return;
         
-        this.pressedButtons.delete(buttonName);
-        buttonElement.classList.remove('pressed');
+        const rect = this.elements.trackpad.getBoundingClientRect();
+        const currentX = event.clientX - rect.left;
+        const currentY = event.clientY - rect.top;
         
-        // Send button release to server
-        this.socket.emit('button-release', { button: buttonName });
+        const deltaX = currentX - this.mouseTrackingData.lastX;
+        const deltaY = currentY - this.mouseTrackingData.lastY;
         
-        console.log(`🎮 Button released: ${buttonName}`);
+        this.sendMouseMove(deltaX, deltaY);
+        
+        this.mouseTrackingData.lastX = currentX;
+        this.mouseTrackingData.lastY = currentY;
+    }
+    
+    endTrackpadMouse(event) {
+        if (this.mouseTrackingData?.tracking) {
+            const button = event.button === 2 ? 'right' : 'left';
+            this.sendMouseClick(button);
+        }
+        
+        this.mouseTrackingData = null;
+        this.elements.trackpad.classList.remove('active');
+        this.elements.trackpadCursor.style.opacity = '0';
     }
     
     /**
@@ -390,33 +453,46 @@ class GameController {
         if (!this.isConnected) return;
         
         this.socket.emit('mouse-click', { button });
-        console.log(`🖱️  Mouse ${button} click`);
+        console.log(`🖱️ Mouse ${button} click`);
     }
     
     /**
-     * Release all pressed buttons (on disconnect)
+     * Simulate touch events for mouse testing
+     */
+    simulateTouch(buttonName, element, pressed) {
+        if (pressed) {
+            element.classList.add('pressed');
+            this.socket.emit('button-press', { button: buttonName });
+            this.showHapticFeedback();
+        } else {
+            element.classList.remove('pressed');
+            this.socket.emit('button-release', { button: buttonName });
+        }
+    }
+    
+    /**
+     * Release all pressed buttons on disconnect
      */
     releaseAllButtons() {
-        this.pressedButtons.forEach(buttonName => {
-            const button = document.querySelector(`[data-button="${buttonName}"]`);
-            if (button) {
-                button.classList.remove('pressed');
+        this.activeButtons.forEach((touches, buttonName) => {
+            const element = document.querySelector(`[data-button="${buttonName}"]`);
+            if (element) {
+                element.classList.remove('pressed');
             }
         });
-        this.pressedButtons.clear();
+        this.activeButtons.clear();
+        this.trackpadTouches.clear();
     }
     
     /**
      * Show haptic feedback indicator
      */
     showHapticFeedback() {
-        // Visual feedback
         this.elements.hapticIndicator.classList.add('active');
         setTimeout(() => {
             this.elements.hapticIndicator.classList.remove('active');
         }, 300);
         
-        // Attempt haptic feedback on supported devices
         this.triggerHapticFeedback();
     }
     
@@ -429,7 +505,7 @@ class GameController {
             navigator.vibrate(duration);
         }
         
-        // Gamepad haptic feedback (if connected)
+        // Gamepad haptic feedback
         if ('getGamepads' in navigator) {
             const gamepads = navigator.getGamepads();
             for (let gamepad of gamepads) {
@@ -451,7 +527,6 @@ class GameController {
         this.triggerHapticFeedback(200, 0.8);
         this.showHapticFeedback();
         
-        // Also request server-side vibration test
         if (this.isConnected) {
             this.socket.emit('request-vibration', {
                 duration: 200,
@@ -471,6 +546,16 @@ class GameController {
         } else {
             this.elements.connectionStatus.classList.remove('connected');
             this.elements.connectionStatus.classList.add('disconnected');
+        }
+    }
+    
+    /**
+     * Update controller information display
+     */
+    updateControllerInfo(data) {
+        if (this.elements.controllerInfo) {
+            this.elements.controllerInfo.textContent = 
+                `Controller ${data.controllerNumber} (${data.totalControllers}/${data.maxControllers})`;
         }
     }
     
@@ -499,12 +584,10 @@ class GameController {
     }
     
     /**
-     * Prevent context menu on touch devices
+     * Prevent context menu and unwanted interactions
      */
     preventContextMenu() {
-        document.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-        });
+        document.addEventListener('contextmenu', (e) => e.preventDefault());
         
         // Prevent pull-to-refresh
         document.addEventListener('touchstart', (e) => {
@@ -513,9 +596,10 @@ class GameController {
             }
         });
         
+        // Prevent double-tap zoom
         let lastTouchEnd = 0;
         document.addEventListener('touchend', (e) => {
-            const now = (new Date()).getTime();
+            const now = Date.now();
             if (now - lastTouchEnd <= 300) {
                 e.preventDefault();
             }
@@ -524,10 +608,10 @@ class GameController {
     }
     
     /**
-     * Enable fullscreen mode on mobile devices
+     * Enable fullscreen mode on mobile
      */
     enableFullscreen() {
-        // Auto-hide address bar on mobile
+        // Auto-hide address bar
         setTimeout(() => {
             window.scrollTo(0, 1);
         }, 100);
@@ -545,23 +629,24 @@ class GameController {
 
 // Initialize controller when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('🎮 Initializing Universal Game Controller...');
-    const controller = new GameController();
+    console.log('🎮 Initializing Multi-Touch Game Controller...');
+    const controller = new MultiTouchGameController();
     
     // Make controller accessible globally for debugging
     window.gameController = controller;
     
-    // Add orientation change handler
+    // Handle orientation changes
     window.addEventListener('orientationchange', () => {
         setTimeout(() => {
-            // Force layout recalculation
             window.scrollTo(0, 0);
-            controller.elements.trackpadCursor.style.opacity = '0';
-            setTimeout(() => {
-                controller.elements.trackpadCursor.style.opacity = '';
-            }, 100);
+            if (controller.elements.trackpadCursor) {
+                controller.elements.trackpadCursor.style.opacity = '0';
+                setTimeout(() => {
+                    controller.elements.trackpadCursor.style.opacity = '';
+                }, 100);
+            }
         }, 100);
     });
     
-    console.log('✅ Controller initialized successfully!');
+    console.log('✅ Multi-Touch Controller initialized successfully!');
 });

@@ -3,83 +3,75 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Universal Game Controller</title>
+    <title>Multi-Controller Gamepad System</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a1a2e">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#1a1a2e">
+    <link rel="apple-touch-icon" href="icon-192.png">
 </head>
 <body>
-    <!-- Connection Status -->
+    <!-- Status Bar -->
     <div id="status-bar">
         <div id="connection-status" class="disconnected">
+            <div id="status-dot"></div>
             <span id="status-text">Connecting...</span>
-            <span id="status-dot"></span>
+            <span id="controller-info"></span>
         </div>
     </div>
 
-    <!-- Controller Container -->
+    <!-- Main Controller Interface -->
     <div id="controller-container">
-        
-        <!-- Left Side - D-Pad -->
+        <!-- Left Section: D-Pad -->
         <div class="control-section left-section">
             <div class="dpad-container">
                 <div class="dpad-label">MOVEMENT</div>
                 <div class="dpad">
-                    <button class="dpad-btn dpad-up" data-button="dpad-up">
-                        <span>W</span>
-                    </button>
-                    <button class="dpad-btn dpad-left" data-button="dpad-left">
-                        <span>A</span>
-                    </button>
-                    <button class="dpad-btn dpad-center">
-                        <span>⚡</span>
-                    </button>
-                    <button class="dpad-btn dpad-right" data-button="dpad-right">
-                        <span>D</span>
-                    </button>
-                    <button class="dpad-btn dpad-down" data-button="dpad-down">
-                        <span>S</span>
-                    </button>
+                    <button class="dpad-btn dpad-up" data-button="dpad-up">W</button>
+                    <button class="dpad-btn dpad-left" data-button="dpad-left">A</button>
+                    <div class="dpad-btn dpad-center">⊕</div>
+                    <button class="dpad-btn dpad-right" data-button="dpad-right">D</button>
+                    <button class="dpad-btn dpad-down" data-button="dpad-down">S</button>
                 </div>
             </div>
         </div>
 
-        <!-- Center Section - Mouse Trackpad -->
+        <!-- Center Section: Trackpad -->
         <div class="control-section center-section">
             <div class="trackpad-container">
-                <div class="trackpad-label">MOUSE TRACKPAD</div>
+                <div class="trackpad-label">CAMERA CONTROL</div>
                 <div id="trackpad" class="trackpad">
-                    <div class="trackpad-instructions">
-                        <div>Drag to move cursor</div>
-                        <div>Tap for left click</div>
-                        <div>Hold for right click</div>
-                    </div>
                     <div class="trackpad-cursor"></div>
+                    <div class="trackpad-instructions">
+                        Drag to look around<br>
+                        1 finger tap: Left Click<br>
+                        2 finger tap: Right Click
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Right Side - Action Buttons -->
+        <!-- Right Section: Action Buttons -->
         <div class="control-section right-section">
             <div class="action-buttons-container">
                 <div class="action-label">ACTIONS</div>
                 <div class="action-buttons-grid">
                     <button class="action-btn jump-btn" data-button="action-jump">
-                        <span class="btn-label">JUMP</span>
-                        <span class="btn-key">SPACE</span>
+                        <div class="btn-label">JUMP</div>
+                        <div class="btn-key">A</div>
                     </button>
                     <button class="action-btn run-btn" data-button="action-run">
-                        <span class="btn-label">RUN</span>
-                        <span class="btn-key">SHIFT</span>
+                        <div class="btn-label">RUN</div>
+                        <div class="btn-key">X</div>
                     </button>
                     <button class="action-btn interact-btn" data-button="action-interact">
-                        <span class="btn-label">USE</span>
-                        <span class="btn-key">E</span>
+                        <div class="btn-label">USE</div>
+                        <div class="btn-key">B</div>
                     </button>
                     <button class="action-btn crouch-btn" data-button="action-crouch">
-                        <span class="btn-label">CROUCH</span>
-                        <span class="btn-key">CTRL</span>
+                        <div class="btn-label">CROUCH</div>
+                        <div class="btn-key">Y</div>
                     </button>
                 </div>
             </div>
@@ -88,20 +80,20 @@
 
     <!-- Bottom Controls -->
     <div id="bottom-controls">
-        <button id="menu-btn" class="utility-btn" data-button="action-escape">
-            <span>MENU</span>
-            <span>ESC</span>
+        <button class="utility-btn" data-button="menu">
+            <div class="btn-label">MENU</div>
+            <div class="btn-key">START</div>
         </button>
         
         <div id="sensitivity-control">
-            <label for="mouse-sensitivity">Mouse Speed:</label>
-            <input type="range" id="mouse-sensitivity" min="0.5" max="5" step="0.5" value="2">
+            <span>Camera:</span>
+            <input type="range" id="mouse-sensitivity" min="0.5" max="3" step="0.1" value="2">
             <span id="sensitivity-value">2x</span>
         </div>
         
         <button id="vibration-test" class="utility-btn">
-            <span>TEST</span>
-            <span>📳</span>
+            <div class="btn-label">TEST</div>
+            <div class="btn-key">VIBE</div>
         </button>
     </div>
 
@@ -115,7 +107,7 @@
     </div>
 
     <!-- Instructions Modal -->
-    <div id="instructions-modal" class="modal">
+    <div id="instructions-modal" class="modal hidden">
         <div class="modal-content">
             <div class="modal-header">
                 <h2>🎮 Controller Ready!</h2>
@@ -123,23 +115,27 @@
             </div>
             <div class="modal-body">
                 <div class="instruction-item">
-                    <strong>D-Pad:</strong> Movement controls (WASD keys)
+                    <strong>Movement:</strong> Use D-pad for character movement (WASD)
                 </div>
                 <div class="instruction-item">
-                    <strong>Trackpad:</strong> Mouse control - drag to move, tap to click
+                    <strong>Camera:</strong> Drag trackpad to look around (Right stick)
                 </div>
                 <div class="instruction-item">
-                    <strong>Action Buttons:</strong> Game actions (Jump, Run, Interact, Crouch)
+                    <strong>Actions:</strong> Use action buttons for game controls
                 </div>
                 <div class="instruction-item">
-                    <strong>Menu:</strong> ESC key for game menus
+                    <strong>Clicks:</strong> 1-finger tap = Left click, 2-finger tap = Right click
+                </div>
+                <div class="instruction-item">
+                    <strong>Multi-touch:</strong> Multiple buttons can be pressed simultaneously
                 </div>
                 <div class="tip">
-                    💡 <strong>Tip:</strong> Keep your phone in landscape mode for the best experience!
+                    <strong>Tip:</strong> This phone is now Controller <span id="controller-number"></span>. 
+                    Keep in landscape mode for best experience!
                 </div>
             </div>
             <div class="modal-footer">
-                <button id="start-controlling" class="start-btn">Start Controlling!</button>
+                <button id="start-controlling" class="start-btn">Start Gaming!</button>
             </div>
         </div>
     </div>
@@ -149,10 +145,8 @@
         <div class="haptic-pulse"></div>
     </div>
 
-    <!-- Socket.IO Client -->
+    <!-- Scripts -->
     <script src="/socket.io/socket.io.js"></script>
-    
-    <!-- Main Controller Script -->
     <script src="client.js"></script>
 </body>
 </html>
